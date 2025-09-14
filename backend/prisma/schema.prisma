@@ -7,3 +7,200 @@ datasource db {
     provider = "postgresql"
     url      = env("DATABASE_URL")
 }
+
+enum UserRole {
+    User
+    Expert
+    Admin
+}
+
+enum TimeSlotStatus {
+    Booked
+    Free
+    Blocked
+}
+
+enum BookingStatus {
+    Pending
+    Confirmed
+    Completed
+    Cancelled
+    Refunded
+}
+
+enum TransactionType {
+    Deposit
+    Hold
+    Charge
+    Refund
+}
+
+enum EmailTokenType {
+    VerifyEmail
+    ResetPassword
+}
+
+model User {
+    id        String @id @default(cuid())
+    email     String @unique @db.VarChar(255)
+    firstName String @map("first_name") @db.VarChar(255)
+    lastName  String @map("last_name") @db.VarChar(255)
+    avatarUrl String @map("avatar_url")
+    password  String
+    role      String
+
+    emailVerifiedAt DateTime @map("email_verified_at")
+    createdAt       DateTime @default(now()) @map("created_at")
+    updatedAt       DateTime @default(now()) @map("updated_at")
+
+    profile          ExpertProfile?
+    wallet           Wallet?
+    emails           EmailToken[]
+    tokens           RefreshToken[]
+    auditLogsAsUser  AuditLog[]     @relation("AuditUser")
+    auditLogsAsActor AuditLog[]     @relation("AuditActor")
+
+    @@map("users")
+}
+
+model ExpertProfile {
+    id               String   @id @default(cuid())
+    userId           String   @unique @map("user_id")
+    bio              String?
+    categories       String[]
+    ratePerHour      Decimal  @map("rate_per_hour") @db.Decimal(10, 2)
+    isApproved       Boolean  @default(false) @map("is_approved")
+    calendarSettings Json?    @map("calendar_settings")
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @default(now()) @map("updated_at")
+
+    user   User       @relation(fields: [userId], references: [id])
+    audits AuditLog[]
+    slots  TimeSlot[]
+
+    @@map("expert_profiles")
+}
+
+model TimeSlot {
+    id        String         @id @default(cuid())
+    expertId  String         @map("expert_id")
+    startTime DateTime       @map("start_time")
+    endTime   DateTime       @map("end_time")
+    status    TimeSlotStatus @default(Free)
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @default(now()) @map("updated_at")
+
+    expert ExpertProfile @relation(fields: [expertId], references: [id])
+
+    @@map("time_slots")
+}
+
+model Booking {
+    id       String        @id @default(cuid())
+    userId   String        @map("user_id")
+    expertId String        @map("expert_id")
+    slotId   String        @map("slot_id")
+    status   BookingStatus @default(Pending)
+    price    Decimal       @db.Decimal(10, 2)
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @default(now()) @map("updated_at")
+
+    transactions WalletTransaction[]
+    reviews      Review[]
+
+    @@map("bookings")
+}
+
+model Wallet {
+    id      String  @id @default(cuid())
+    userId  String  @unique @map("user_id")
+    balance Decimal @default(0) @db.Decimal(10, 2)
+
+    user         User                @relation(fields: [userId], references: [id])
+    transactions WalletTransaction[]
+
+    @@map("wallets")
+}
+
+model WalletTransaction {
+    id        String          @id @default(cuid())
+    walletId  String          @map("wallet_id")
+    bookingId String?         @map("booking_id")
+    amount    Decimal         @db.Decimal(10, 2)
+    type      TransactionType
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @default(now()) @map("updated_at")
+
+    wallet  Wallet   @relation(fields: [walletId], references: [id])
+    booking Booking? @relation(fields: [bookingId], references: [id])
+
+    @@map("wallet_transactions")
+}
+
+model Review {
+    id        String  @id @default(cuid())
+    bookingId String  @map("booking_id")
+    rating    Int
+    comment   String?
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @default(now()) @map("updated_at")
+
+    booking Booking @relation(fields: [bookingId], references: [id])
+
+    @@map("reviews")
+}
+
+model EmailToken {
+    id     String         @id @default(cuid())
+    userId String         @map("user_id")
+    token  String
+    type   EmailTokenType
+
+    usedAt    DateTime? @map("used_at")
+    expiresAt DateTime  @map("expires_at")
+    createdAt DateTime  @default(now()) @map("created_at")
+    updatedAt DateTime  @default(now()) @map("updated_at")
+
+    user User @relation(fields: [userId], references: [id])
+
+    @@map("email_tokens")
+}
+
+model RefreshToken {
+    id        String    @id @default(cuid())
+    userId    String    @map("user_id")
+    token     String
+    userAgent String    @map("user_agent")
+    ipAddress String    @map("ip_address")
+    revokedAt DateTime? @map("revoked_at")
+    expiresAt DateTime  @map("expires_at")
+    createdAt DateTime  @default(now()) @map("created_at")
+    updatedAt DateTime  @default(now()) @map("updated_at")
+
+    user User @relation(fields: [userId], references: [id])
+
+    @@map("refresh_tokens")
+}
+
+model AuditLog {
+    id       String @id @default(cuid())
+    userId   String @map("user_id")
+    expertId String @map("expert_id")
+    action   String
+    actorId  String @map("actor_id")
+    meta     Json?
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    user   User          @relation("AuditUser", fields: [userId], references: [id])
+    actor  User          @relation("AuditActor", fields: [actorId], references: [id])
+    expert ExpertProfile @relation(fields: [expertId], references: [id])
+
+	@@map("audit_logs")
+}
